@@ -22,9 +22,8 @@ current so it reflects real progress, not the original plan.
 ## Phase 1 — Lakebase schema
 
 - [x] `schema.sql` written (tables, grants with `<DATABRICKS_CLIENT_ID>`
-      placeholder, sample data). Not yet run against a live Lakebase
-      instance — pending Phase 0 (Databricks App + Lakebase project
-      creation).
+      placeholder, sample data) and run against the live
+      `job-search-agent-db` Lakebase instance via the SQL Editor.
 
 Design and run `schema.sql` covering:
 
