@@ -15,10 +15,9 @@ current so it reflects real progress, not the original plan.
 - [x] Create a Lakebase Postgres project (e.g. `job-copilot-db`).
 - [x] Confirm Databricks Vector Search is available in the workspace/edition
       being used.
-- [x] `setup_secrets.py` written to load the Adzuna/USAJobs API keys into
-      a Databricks secret scope (`job-copilot`) for use by the Phase 2
-      Spark job. Run locally by the user, not yet executed as of this
-      commit.
+- [x] `setup_secrets.py` written and run — Adzuna/USAJobs API keys are
+      loaded into the Databricks secret scope (`job-copilot`) for use by
+      the Phase 2 Spark job.
 
 ## Phase 1 — Lakebase schema
 
