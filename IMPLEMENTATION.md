@@ -5,17 +5,27 @@ current so it reflects real progress, not the original plan.
 
 ## Phase 0 — Setup
 
-- [ ] Sign up for API keys: [Adzuna](https://developer.adzuna.com/)
+- [x] Sign up for API keys: [Adzuna](https://developer.adzuna.com/)
       (app ID + key) and [USAJobs](https://developer.usajobs.gov/)
-      (key + registered email). RemoteOK needs no key.
-- [ ] Create the Databricks App from the workspace UI (Apps → Create app)
+      (key + registered email). RemoteOK needs no key. Stored in local
+      gitignored `.env`.
+- [x] Create the Databricks App from the workspace UI (Apps → Create app)
       to provision a service principal, per the pattern used in
       `lakebase-support-app`. Copy the `DATABRICKS_CLIENT_ID`.
-- [ ] Create a Lakebase Postgres project (e.g. `job-copilot-db`).
-- [ ] Confirm Databricks Vector Search is available in the workspace/edition
+- [x] Create a Lakebase Postgres project (e.g. `job-copilot-db`).
+- [x] Confirm Databricks Vector Search is available in the workspace/edition
       being used.
+- [x] `setup_secrets.py` written to load the Adzuna/USAJobs API keys into
+      a Databricks secret scope (`job-copilot`) for use by the Phase 2
+      Spark job. Run locally by the user, not yet executed as of this
+      commit.
 
 ## Phase 1 — Lakebase schema
+
+- [x] `schema.sql` written (tables, grants with `<DATABRICKS_CLIENT_ID>`
+      placeholder, sample data). Not yet run against a live Lakebase
+      instance — pending Phase 0 (Databricks App + Lakebase project
+      creation).
 
 Design and run `schema.sql` covering:
 
@@ -30,9 +40,11 @@ Design and run `schema.sql` covering:
 - `applications` — id, user_id, job_posting_id, stage (`saved` /
   `applied` / `interviewing` / `rejected` / `offer`), applied_at,
   last_updated_at.
-- `saved_jobs` — id, user_id, job_posting_id, saved_at (or fold into
-  `applications` with stage=`saved` if that's simpler — decide during
-  implementation and note the choice here).
+- `saved_jobs` — **decision: folded into `applications`** with
+  `stage='saved'` as the default/initial stage, rather than a separate
+  table. Keeps one uniqueness constraint (`user_id`, `job_posting_id`)
+  and one set of stage-transition logic instead of duplicating it across
+  two tables.
 - `interview_notes` — id, application_id, note_text, follow_up_date,
   author, created_at.
 - `contacts` — id, application_id, name, role, email, linkedin_url, notes.
