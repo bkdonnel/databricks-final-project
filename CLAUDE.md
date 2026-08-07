@@ -11,7 +11,9 @@ truth for "what's done / what's next") is in IMPLEMENTATION.md.
 
 ## Status
 
-Planning phase. No application code exists yet — only planning docs. Before
+Planning phase. No application code exists yet — only planning docs
+(README.md, CLAUDE.md, IMPLEMENTATION.md), committed and pushed to
+https://github.com/bkdonnel/databricks-final-project (public). Before
 writing code, check IMPLEMENTATION.md for which phase is active and update
 its checkboxes as steps complete.
 
