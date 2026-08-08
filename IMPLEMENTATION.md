@@ -236,21 +236,85 @@ Mirror the structure of `lakebase-support-app`:
 
 ## Phase 5 — AI agent
 
-- [ ] Define read tools: `search_postings(query, profile_id)`,
-      `get_posting(id)`, `get_pipeline(user_id)`, `get_notes(application_id)`.
-- [ ] Define write tools: `save_posting(user_id, posting_id)`,
-      `update_stage(application_id, stage)`,
-      `add_interview_note(application_id, text, follow_up_date)`,
-      `draft_cover_letter_snippet(posting_id, profile_id)` (generation
+- [x] Define read tools: `search_postings(query, remote_only)`,
+      `get_posting(posting_id)`, `get_pipeline()`, `get_notes(posting_id)`.
+- [x] Define write tools: `save_posting(posting_id)`,
+      `update_stage(posting_id, stage, confirm)`,
+      `add_interview_note(posting_id, note_text, follow_up_date)`,
+      `draft_cover_letter_snippet(posting_id)` (generation
       only — doesn't write unless the user explicitly saves the draft).
-- [ ] Wire the agent into the Flask app (a chat endpoint/view) so it can
+- [x] Wire the agent into the Flask app (a chat endpoint/view) so it can
       call these tools against Lakebase in response to natural-language
       requests.
-- [ ] Add a "surface stale applications" capability — e.g. a scheduled
+- [x] Add a "surface stale applications" capability — e.g. a scheduled
       check or an on-demand agent query for applications with no
       `last_updated_at` change in N days.
-- [ ] Sanity-check: every write tool validates its inputs the same way
+- [x] Sanity-check: every write tool validates its inputs the same way
       the Flask routes do (stage whitelisting, required fields).
+
+  **Real deviation discovered: `databricks-sdk`'s typed
+  `serving_endpoints.query()` has no tool-calling support at all.**
+  Inspecting `serving.py` in the installed SDK (0.125.0) turned up zero
+  references to "tool" anywhere — the method's only escape hatch,
+  `extra_params`, is typed `Dict[str, str]`, which can't carry a JSON tool
+  schema. Foundation Model API chat endpoints are OpenAI-compatible over
+  plain REST (`POST {host}/serving-endpoints/{name}/invocations`), so
+  `agent.py`'s `query_chat()` calls that endpoint directly via `requests`
+  (already a dependency), authenticated with
+  `WorkspaceClient().config.authenticate()` headers — the same pattern
+  every other component in this repo uses for its own `WorkspaceClient()`
+  instance, just applied to a raw HTTP call instead of a typed SDK method.
+
+  This workspace's Foundation Model API has no `databricks-claude-*`
+  endpoint — only GPT-OSS-120b/20b, Qwen3-Next-80B, Qwen3.5-122B,
+  Llama-4-Maverick, Llama-3.1-8B, Llama-3.3-70B, and Gemma-3-12B chat
+  models. `scripts/verify_agent_tools.py` sent a trivial dummy tool to four
+  candidates before committing to one; all four (Llama-3.3-70B,
+  Llama-4-Maverick, GPT-OSS-120b, Qwen3-Next-80B) returned real
+  `tool_calls` rather than answering in prose. Picked
+  `databricks-meta-llama-3-3-70b-instruct` as `AGENT_MODEL` — Databricks'
+  best-documented FMAPI function-calling model, and the cleanest/most
+  consistent JSON tool-call arguments of the four in the smoke test.
+
+  **Implementation:** `agent.py` holds the model-facing, DB-agnostic half —
+  `TOOL_SCHEMAS` (OpenAI-format tool definitions), `SYSTEM_PROMPT`,
+  `query_chat()` (the direct REST call, wrapped in a 30s timeout per the
+  Phase 3 gotcha that FMAPI endpoints hang rather than error), and
+  `run_agent_turn()` (the tool-calling loop, capped at 6 iterations). Tool
+  *implementations* live in `app.py` next to the Lakebase helpers they
+  reuse (`get_conn`, `embed`, `profile_context`, `search_postings`,
+  `fetch_posting`, etc.) — putting them in `agent.py` instead would have
+  created a circular import, since `app.py` already owns all Lakebase
+  access. `update_stage_tool` requires `confirm="REJECT"` before moving a
+  stage to `rejected`, matching CLAUDE.md's requirement that destructive-ish
+  writes mirror the reference app's DELETE-to-confirm pattern; the model is
+  instructed via `SYSTEM_PROMPT` to ask the user in plain language before
+  ever passing that value. `draft_cover_letter_snippet` is read-only by
+  design — it hands the model full posting + profile context and lets the
+  model compose the draft in its reply; if the user wants it kept, the
+  model calls `add_interview_note` instead of a new drafts table (avoids a
+  schema change for something the existing tables already cover).
+  Chat history is a simple **module-level in-memory list** of OpenAI-format
+  messages, matching the rest of the app's no-JS, plain-form-POST style
+  (`GET /chat`, `POST /chat`, `POST /chat/clear`) — acceptable for a
+  single-user app with no login, with the noted tradeoff that history is
+  lost on process restart and not safe across multiple worker processes.
+  `get_stale_applications` satisfies the "surface stale applications" item
+  as an on-demand agent query (applications not in `rejected`/`offer` with
+  `last_updated_at` older than N days, default 14) rather than new
+  scheduling infrastructure.
+
+  **Verified against the live instance** via `flask run` + curl against
+  `/chat`: a profile-matched search, `get_posting` lookup, `save_posting`,
+  a `update_stage` reject attempt correctly refused without confirmation
+  and then correctly applied after confirming, `add_interview_note`
+  chained with `get_stale_applications` in a single turn, and
+  `draft_cover_letter_snippet` — all confirmed against real data via
+  `/pipeline` and `/postings/<id>` afterward (posting #1 now `rejected`,
+  posting #2 has the test interview note). No browser tool was available
+  this session either, so `templates/chat.html`'s CSS/layout wasn't
+  visually confirmed, only functional behavior via HTTP requests (same
+  caveat as Phase 4).
 
 ## Phase 6 — Deploy & verify
 

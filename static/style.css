@@ -389,6 +389,19 @@ body {
 .kanban-card-meta { color: var(--text-dim); font-size: 0.8rem; margin-top: 4px; }
 .kanban-card-date { color: var(--text-dim); font-size: 0.75rem; margin-top: 6px; }
 
+/* Chat */
+.chat-list {
+    max-height: 560px;
+}
+
+.chat-message-user {
+    border-color: var(--accent);
+}
+
+.chat-message-assistant .message-body {
+    white-space: pre-wrap;
+}
+
 @media (max-width: 900px) {
     .two-col { grid-template-columns: 1fr; }
     .kanban { grid-template-columns: 1fr; }

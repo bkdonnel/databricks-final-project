@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Chat - Job Hunting Copilot{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="posting-card-head">
+        <h2>Chat with your copilot</h2>
+        <form method="post" action="{{ url_for('chat_clear') }}" class="inline-form">
+            <button type="submit" class="btn-link btn-link-danger">Clear conversation</button>
+        </form>
+    </div>
+    <p class="panel-subtitle">
+        Ask it to find matching postings, explain a fit, save or update an application,
+        log an interview note, check for stale applications, or draft a cover-letter snippet.
+    </p>
+
+    <div class="message-list chat-list">
+        {% for m in messages %}
+            <div class="message chat-message chat-message-{{ m.role }}">
+                <div class="message-head">
+                    <strong>{{ "You" if m.role == "user" else "Copilot" }}</strong>
+                </div>
+                <div class="message-body">{{ m.content }}</div>
+            </div>
+        {% else %}
+            <p class="empty-state">No messages yet -- ask about roles that match your profile, or say "what's in my pipeline?"</p>
+        {% endfor %}
+    </div>
+
+    <form method="post" action="{{ url_for('chat_send') }}" class="stacked-form">
+        <label for="message">Message</label>
+        <textarea id="message" name="message" rows="3" required maxlength="2000"
+                  placeholder="e.g. Find me remote backend roles that don't need heavy Kubernetes experience"></textarea>
+        <button type="submit" class="btn btn-primary">Send</button>
+    </form>
+</section>
+{% endblock %}

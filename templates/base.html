@@ -13,6 +13,7 @@
             <a href="{{ url_for('postings') }}" class="{{ 'active' if request.endpoint == 'postings' else '' }}">Search Jobs</a>
             <a href="{{ url_for('pipeline') }}" class="{{ 'active' if request.endpoint == 'pipeline' else '' }}">Pipeline</a>
             <a href="{{ url_for('profile') }}" class="{{ 'active' if request.endpoint == 'profile' else '' }}">My Profile</a>
+            <a href="{{ url_for('chat') }}" class="{{ 'active' if request.endpoint in ('chat', 'chat_send', 'chat_clear') else '' }}">Chat</a>
         </nav>
     </header>
 

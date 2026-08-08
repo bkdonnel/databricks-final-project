@@ -59,12 +59,13 @@ See [IMPLEMENTATION.md](IMPLEMENTATION.md) for the build plan and
 
 ## Status
 
-Phases 0-4 complete (setup, schema, Spark ingestion pipeline, semantic
-embeddings/retrieval, Flask frontend) — see
+Phases 0-5 complete (setup, schema, Spark ingestion pipeline, semantic
+embeddings/retrieval, Flask frontend, AI agent with tools) — see
 [IMPLEMENTATION.md](IMPLEMENTATION.md) for details and next steps. The
-Flask app is a single-user personal copilot for now (no login system);
-the chat-with-agent view is deferred to Phase 5, and the app isn't
-deployed live yet (Phase 6). Phases 5-6 (AI agent, deploy) not started.
+Flask app is a single-user personal copilot for now (no login system).
+The agent is wired into a `/chat` view and can both retrieve and write
+against Lakebase, verified locally against the live instance. The app
+isn't deployed live yet — that's Phase 6.
 
 ## Bootcamp requirements checklist
 
@@ -72,4 +73,4 @@ deployed live yet (Phase 6). Phases 5-6 (AI agent, deploy) not started.
 - [x] Third-party API integration (Adzuna / USAJobs / RemoteOK)
 - [x] Unstructured data processing (job description text embeddings)
 - [x] Databricks App with a frontend
-- [ ] AI agent with read + write tools
+- [x] AI agent with read + write tools

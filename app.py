@@ -1,10 +1,13 @@
 import os
+from datetime import datetime
 
 from flask import Flask, render_template, request, redirect, url_for, flash
 from databricks.sdk import WorkspaceClient
 import psycopg
 from psycopg_pool import ConnectionPool
 from psycopg.rows import dict_row
+
+import agent
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-change-me")
@@ -519,8 +522,7 @@ def add_contact(posting_id):
 # ---------------------------------------------------------------------------
 # Routes: pipeline board
 # ---------------------------------------------------------------------------
-@app.route("/pipeline")
-def pipeline():
+def fetch_pipeline_rows(user_id):
     with get_conn() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
@@ -532,15 +534,318 @@ def pipeline():
                 WHERE a.user_id = %s
                 ORDER BY a.last_updated_at DESC
                 """,
-                (DEFAULT_USER_ID,),
+                (user_id,),
             )
-            applications = cur.fetchall()
+            return cur.fetchall()
+
+
+@app.route("/pipeline")
+def pipeline():
+    applications = fetch_pipeline_rows(DEFAULT_USER_ID)
 
     board = {stage: [] for stage in VALID_STAGES}
     for a in applications:
         board[a["stage"]].append(a)
 
     return render_template("pipeline.html", board=board, valid_stages=VALID_STAGES)
+
+
+# ---------------------------------------------------------------------------
+# Agent tool implementations (Phase 5). Schemas + the tool-calling loop live
+# in agent.py; implementations live here since they reuse the Lakebase
+# helpers above. Every tool returns a JSON-serializable dict, with an
+# "error" key on validation failure instead of raising, so the model gets a
+# message to relay instead of crashing the loop. Write tools validate inputs
+# the same way their route counterparts do.
+# ---------------------------------------------------------------------------
+def _posting_summary(row):
+    return {
+        "posting_id": row["posting_id"],
+        "title": row["title"],
+        "company": row["company"],
+        "location": row["location"],
+        "remote": row["remote_flag"],
+        "salary_min": row["salary_min"],
+        "salary_max": row["salary_max"],
+        "url": row["url"],
+        "stage": row.get("stage"),
+        "similarity": round(row["similarity"], 3) if row.get("similarity") is not None else None,
+        "description_snippet": (row["description"] or "")[:300],
+    }
+
+
+def search_postings_tool(query, remote_only=False):
+    search_text = query
+    profile_row, _ = fetch_profile(DEFAULT_USER_ID)
+    if profile_row:
+        with get_conn() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                context = profile_context(cur, profile_row["profile_id"])
+        if context:
+            search_text = f"{query}. {context}"
+    results = search_postings(search_text, remote_only, limit=10)
+    return {"results": [_posting_summary(r) for r in results]}
+
+
+def get_posting_tool(posting_id):
+    posting = fetch_posting(posting_id)
+    if not posting:
+        return {"error": f"No posting with posting_id={posting_id}."}
+    application = fetch_application_for_posting(DEFAULT_USER_ID, posting_id)
+    return {
+        "posting_id": posting["posting_id"],
+        "title": posting["title"],
+        "company": posting["company"],
+        "location": posting["location"],
+        "remote": posting["remote_flag"],
+        "salary_min": posting["salary_min"],
+        "salary_max": posting["salary_max"],
+        "url": posting["url"],
+        "description": posting["description"],
+        "stage": application["stage"] if application else None,
+    }
+
+
+def get_pipeline_tool():
+    rows = fetch_pipeline_rows(DEFAULT_USER_ID)
+    return {
+        "applications": [
+            {
+                "application_id": r["application_id"],
+                "posting_id": r["posting_id"],
+                "title": r["title"],
+                "company": r["company"],
+                "location": r["location"],
+                "remote": r["remote_flag"],
+                "stage": r["stage"],
+                "applied_at": r["applied_at"].isoformat() if r["applied_at"] else None,
+                "last_updated_at": r["last_updated_at"].isoformat() if r["last_updated_at"] else None,
+            }
+            for r in rows
+        ]
+    }
+
+
+def get_notes_tool(posting_id):
+    application = fetch_application_for_posting(DEFAULT_USER_ID, posting_id)
+    if not application:
+        return {"error": f"No application found for posting_id={posting_id}. It hasn't been saved yet."}
+
+    with get_conn() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """SELECT note_text, follow_up_date, author, created_at
+                   FROM interview_notes WHERE application_id = %s ORDER BY created_at ASC""",
+                (application["application_id"],),
+            )
+            notes = cur.fetchall()
+            cur.execute(
+                """SELECT name, role, email, linkedin_url, notes
+                   FROM contacts WHERE application_id = %s ORDER BY created_at ASC""",
+                (application["application_id"],),
+            )
+            contacts = cur.fetchall()
+
+    return {
+        "stage": application["stage"],
+        "notes": [
+            {
+                "note_text": n["note_text"],
+                "follow_up_date": n["follow_up_date"].isoformat() if n["follow_up_date"] else None,
+                "author": n["author"],
+                "created_at": n["created_at"].isoformat(),
+            }
+            for n in notes
+        ],
+        "contacts": [dict(c) for c in contacts],
+    }
+
+
+def get_stale_applications_tool(days=14):
+    with get_conn() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT a.stage, a.last_updated_at, jp.posting_id, jp.title, jp.company
+                FROM applications a
+                JOIN job_postings jp ON jp.posting_id = a.job_posting_id
+                WHERE a.user_id = %(user_id)s
+                  AND a.stage NOT IN ('rejected', 'offer')
+                  AND a.last_updated_at < CURRENT_TIMESTAMP - (%(days)s || ' days')::interval
+                ORDER BY a.last_updated_at ASC
+                """,
+                {"user_id": DEFAULT_USER_ID, "days": days},
+            )
+            rows = cur.fetchall()
+
+    return {
+        "stale_applications": [
+            {
+                "posting_id": r["posting_id"],
+                "title": r["title"],
+                "company": r["company"],
+                "stage": r["stage"],
+                "last_updated_at": r["last_updated_at"].isoformat(),
+            }
+            for r in rows
+        ]
+    }
+
+
+def save_posting_tool(posting_id):
+    if not fetch_posting(posting_id):
+        return {"error": f"No posting with posting_id={posting_id}."}
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO applications (user_id, job_posting_id, stage)
+                   VALUES (%s, %s, 'saved')
+                   ON CONFLICT (user_id, job_posting_id) DO NOTHING""",
+                (DEFAULT_USER_ID, posting_id),
+            )
+        conn.commit()
+
+    return {"status": "saved", "posting_id": posting_id}
+
+
+def update_stage_tool(posting_id, stage, confirm=None):
+    if stage not in VALID_STAGES:
+        return {"error": f"Invalid stage '{stage}'. Must be one of {VALID_STAGES}."}
+    if stage == "rejected" and confirm != "REJECT":
+        return {
+            "error": (
+                "Marking an application as rejected requires explicit confirmation. "
+                'Ask the user to confirm, then call update_stage again with confirm="REJECT".'
+            )
+        }
+    if not fetch_posting(posting_id):
+        return {"error": f"No posting with posting_id={posting_id}."}
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO applications (user_id, job_posting_id, stage, applied_at)
+                VALUES (%(user_id)s, %(posting_id)s, %(stage)s,
+                        CASE WHEN %(stage)s = 'applied' THEN CURRENT_TIMESTAMP END)
+                ON CONFLICT (user_id, job_posting_id) DO UPDATE SET
+                    stage = EXCLUDED.stage,
+                    applied_at = COALESCE(applications.applied_at, EXCLUDED.applied_at),
+                    last_updated_at = CURRENT_TIMESTAMP
+                """,
+                {"user_id": DEFAULT_USER_ID, "posting_id": posting_id, "stage": stage},
+            )
+        conn.commit()
+
+    return {"status": "updated", "posting_id": posting_id, "stage": stage}
+
+
+def add_interview_note_tool(posting_id, note_text, follow_up_date=None):
+    note_text = (note_text or "").strip()[:2000]
+    if not note_text:
+        return {"error": "note_text is required."}
+    if follow_up_date:
+        try:
+            datetime.strptime(follow_up_date, "%Y-%m-%d")
+        except ValueError:
+            return {"error": "follow_up_date must be in YYYY-MM-DD format."}
+
+    application = fetch_application_for_posting(DEFAULT_USER_ID, posting_id)
+    if not application:
+        return {"error": f"Posting {posting_id} hasn't been saved to the pipeline yet -- save it first."}
+
+    author = fetch_user_display_name(DEFAULT_USER_ID)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO interview_notes
+                       (application_id, note_text, follow_up_date, author)
+                   VALUES (%s, %s, %s, %s)""",
+                (application["application_id"], note_text, follow_up_date, author),
+            )
+        conn.commit()
+
+    return {"status": "note added", "posting_id": posting_id}
+
+
+def draft_cover_letter_snippet_tool(posting_id):
+    posting = fetch_posting(posting_id)
+    if not posting:
+        return {"error": f"No posting with posting_id={posting_id}."}
+
+    profile_row, skills = fetch_profile(DEFAULT_USER_ID)
+    return {
+        "posting": {
+            "title": posting["title"],
+            "company": posting["company"],
+            "description": posting["description"],
+        },
+        "profile": (
+            {
+                "target_roles": profile_row["target_roles"],
+                "resume_summary": profile_row["resume_summary"],
+                "notes": profile_row["notes"],
+                "skills": [s["skill_name"] for s in skills],
+            }
+            if profile_row
+            else None
+        ),
+        "instructions": (
+            "Write a short (3-5 sentence) tailored cover-letter snippet or resume bullet "
+            "using this context. Do not save it unless the user asks -- offer to log it "
+            "via add_interview_note if they want it kept."
+        ),
+    }
+
+
+TOOL_DISPATCH = {
+    "search_postings": search_postings_tool,
+    "get_posting": get_posting_tool,
+    "get_pipeline": get_pipeline_tool,
+    "get_notes": get_notes_tool,
+    "get_stale_applications": get_stale_applications_tool,
+    "save_posting": save_posting_tool,
+    "update_stage": update_stage_tool,
+    "add_interview_note": add_interview_note_tool,
+    "draft_cover_letter_snippet": draft_cover_letter_snippet_tool,
+}
+
+# In-memory chat history -- single-user app, no login, no JS anywhere else in
+# this app, so a plain form-POST + redirect matches every other route here
+# rather than introducing a fetch/JS chat widget. Lost on process restart /
+# not safe across multiple worker processes, which is acceptable for this
+# single-user capstone scope.
+CHAT_HISTORY = [{"role": "system", "content": agent.SYSTEM_PROMPT}]
+
+
+# ---------------------------------------------------------------------------
+# Routes: chat
+# ---------------------------------------------------------------------------
+@app.route("/chat")
+def chat():
+    visible = [m for m in CHAT_HISTORY if m["role"] in ("user", "assistant") and m.get("content")]
+    return render_template("chat.html", messages=visible)
+
+
+@app.route("/chat", methods=["POST"])
+def chat_send():
+    user_text = request.form.get("message", "").strip()[:2000]
+    if not user_text:
+        flash("Message cannot be empty.", "error")
+        return redirect(url_for("chat"))
+
+    CHAT_HISTORY.append({"role": "user", "content": user_text})
+    agent.run_agent_turn(CHAT_HISTORY, TOOL_DISPATCH)
+    return redirect(url_for("chat"))
+
+
+@app.route("/chat/clear", methods=["POST"])
+def chat_clear():
+    CHAT_HISTORY.clear()
+    CHAT_HISTORY.append({"role": "system", "content": agent.SYSTEM_PROMPT})
+    flash("Conversation cleared.", "success")
+    return redirect(url_for("chat"))
 
 
 if __name__ == "__main__":
