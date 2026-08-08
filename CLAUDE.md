@@ -5,23 +5,27 @@ Guidance for Claude Code when working in this repo.
 ## What this is
 
 Bootcamp capstone: an AI Job Hunting Copilot. A Databricks App (Flask) +
-Lakebase Postgres + Databricks Vector Search + an AI agent with tools. Full
-concept and architecture are in README.md; the phased build plan (source of
-truth for "what's done / what's next") is in IMPLEMENTATION.md.
+Lakebase Postgres (with `pgvector` for semantic search) + an AI agent with
+tools. Full concept and architecture are in README.md; the phased build plan
+(source of truth for "what's done / what's next") is in IMPLEMENTATION.md.
 
 ## Status
 
 Repo is public at https://github.com/bkdonnel/databricks-final-project.
-Phase 0 (API keys, Databricks App, Lakebase project `job-search-agent-db`,
-Vector Search) and Phase 1 (`schema.sql`, run against the live instance) are
-complete; `setup_secrets.py` (loads Adzuna/USAJobs keys into the
-`job-copilot` Databricks secret scope) is written and run. Phase 2 (Spark
-ingestion pipeline) is implemented and deployed — see IMPLEMENTATION.md's
-Phase 2 section for real deviations discovered along the way (this
-workspace is **Databricks Free Edition**: serverless-only compute, no
-`run_as` service principal for Jobs, Lakebase uses the newer "Postgres
-Autoscaling" credential API with full endpoint-path resource names, and
-`psycopg` must be installed without the `[binary]` extra). Before writing
+Phase 0 (API keys, Databricks App, Lakebase project `job-search-agent-db`)
+and Phase 1 (`schema.sql`, run against the live instance) are complete;
+`setup_secrets.py` (loads Adzuna/USAJobs keys into the `job-copilot`
+Databricks secret scope) is written and run. Phase 2 (Spark ingestion
+pipeline) is implemented and deployed — see IMPLEMENTATION.md's Phase 2
+section for real deviations discovered along the way (this workspace is
+**Databricks Free Edition**: serverless-only compute, no `run_as` service
+principal for Jobs, Lakebase uses the newer "Postgres Autoscaling"
+credential API with full endpoint-path resource names, and `psycopg` must
+be installed without the `[binary]` extra). Phase 3 (embeddings/semantic
+retrieval) is implemented and deployed — `pgvector` (not the standalone
+Databricks Vector Search product) on the same Lakebase instance; see
+IMPLEMENTATION.md's Phase 3 section, including a Free-Edition-specific
+embeddings-endpoint batch-size limit discovered there. Before writing
 code, check IMPLEMENTATION.md for which phase is active and update its
 checkboxes as steps complete.
 

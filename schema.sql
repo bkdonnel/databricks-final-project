@@ -6,6 +6,13 @@
 -- Enable OAuth auth extension (lets Databricks tokens act as Postgres passwords)
 CREATE EXTENSION IF NOT EXISTS databricks_auth;
 
+-- Enable pgvector for semantic retrieval (Phase 3). Chosen over the
+-- standalone Databricks Vector Search product to avoid mirroring
+-- job_postings into a separate Unity Catalog Delta table just to feed an
+-- index -- Lakebase Postgres stays the single source of truth, and
+-- similarity search is plain SQL via the <=> operator.
+CREATE EXTENSION IF NOT EXISTS vector;
+
 -- Create a Postgres role for the app's service principal
 -- (from the Databricks App's Environment tab -> DATABRICKS_CLIENT_ID).
 SELECT databricks_create_role('<DATABRICKS_CLIENT_ID>', 'service_principal');
@@ -66,10 +73,21 @@ CREATE TABLE IF NOT EXISTS job_postings (
     url               TEXT,
     posted_at         TIMESTAMP,
     fetched_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- Embedding of title + description (Phase 2's embed_job_postings task),
+    -- 1024 dims to match the databricks-gte-large-en endpoint. embedded_at
+    -- lets that task find rows that are new or have been re-fetched since
+    -- their last embedding (embedded_at IS NULL OR embedded_at < fetched_at).
+    embedding         vector(1024),
+    embedded_at       TIMESTAMP,
     UNIQUE (external_source, external_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_job_postings_posted_at ON job_postings(posted_at DESC);
+
+-- HNSW cosine-distance index for nearest-neighbor search over embeddings
+-- (pgvector >=0.5.0; confirmed 0.8.0 on this Lakebase instance).
+CREATE INDEX IF NOT EXISTS idx_job_postings_embedding
+    ON job_postings USING hnsw (embedding vector_cosine_ops);
 
 -- Tracks a user's pipeline for a posting. There is no separate
 -- "saved_jobs" table -- saving a posting is just creating an

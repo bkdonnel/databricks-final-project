@@ -116,17 +116,78 @@ local testing before the real pipeline is wired up.
 
 ## Phase 3 — Embeddings / semantic retrieval
 
-- [ ] Pick an embedding model available in the workspace (e.g. a
+- [x] Pick an embedding model available in the workspace (e.g. a
       Databricks-hosted embedding endpoint).
-- [ ] Embed `job_postings.description` (and optionally title + company)
+- [x] Embed `job_postings.description` (and optionally title + company)
       into a vector index (Databricks Vector Search, synced from the
       Lakebase table or a Delta table mirroring it).
-- [ ] Embed each user's `profiles` skills/resume summary the same way, so
+- [x] Embed each user's `profiles` skills/resume summary the same way, so
       queries like "remote backend roles that don't require 5+ years of
       Kubernetes" can match against both the query text and the profile
       context.
-- [ ] Write a retrieval function: given a query (+ optional profile_id),
+- [x] Write a retrieval function: given a query (+ optional profile_id),
       return the top-N matching postings with scores.
+
+  **Design decision: `pgvector` on Lakebase instead of the standalone
+  Databricks Vector Search product.** The user had already run
+  `CREATE EXTENSION vector;` on the live Lakebase instance before this
+  phase started, confirming pgvector (not the separate Vector Search
+  service) was the intended approach. This is a better fit anyway: the
+  workspace's only Unity Catalog catalogs are `workspace`/`samples`/`system`
+  (no project catalog), and a standalone Vector Search index would have
+  needed either a Delta-table mirror of `job_postings` (extra moving parts,
+  a second copy of the data, Change Data Feed) or a Direct Vector Access
+  index registered under a UC schema anyway. With pgvector, Lakebase stays
+  the single source of truth: `embedding vector(1024)` + `embedded_at`
+  columns live directly on `job_postings`, with an HNSW cosine-distance
+  index (`idx_job_postings_embedding`; pgvector 0.8.0 confirmed on this
+  instance, which supports HNSW). No profile-embedding column was added —
+  the retrieval function instead concatenates the query text with the
+  profile's `target_roles`/`resume_summary`/`notes`/skills before embedding
+  a single combined vector, which is simpler than storing and combining
+  two separate embeddings and satisfies the same requirement.
+
+  **Implementation:**
+  - `notebooks/embed_job_postings.py` — new task in the existing
+    `ingest_job_postings_job` (runs after `ingest_job_postings`, same 6h
+    schedule). Finds rows where `embedding IS NULL OR embedded_at <
+    fetched_at`, embeds `title + description` via the
+    `databricks-gte-large-en` Foundation Model API endpoint (1024 dims;
+    `databricks-bge-large-en` and `databricks-qwen3-embedding-0-6b` are
+    also available at the same dimension if this one is ever unavailable),
+    and writes vectors back via the same OAuth-token-rotation
+    `psycopg.Connection` pattern used by `ingest_job_postings.py`.
+  - `scripts/search_postings.py` — local verification script (same
+    local-harness style as `scripts/verify_fetchers.py`): given a query and
+    optional `--profile-id`, builds the combined query text, embeds it, and
+    ranks `job_postings` by cosine similarity (`embedding <=> ...`) via
+    plain SQL. Verified against live data: a query alone surfaces relevant
+    Python/backend and DC-federal postings; the same query combined with a
+    Platform-Engineer/Kubernetes profile re-ranks a "Platform Engineer"
+    posting to #1 that didn't appear in the query-only top 5 — confirming
+    profile context actually changes ranking, not just query text.
+
+  **Real deviation discovered (Free Edition-specific, same spirit as
+  Phase 2's list below):**
+  - **The embeddings endpoint hangs (not errors) on batches of ~20+
+    inputs.** First backfill run: every batch of 20 texts sent to
+    `w.serving_endpoints.query()` printed
+    `Timed out after 0:05:00` — the SDK's ~5-minute default timeout, not a
+    fast failure. Local diagnostic (bypassing the notebook, calling the
+    same endpoint directly) isolated it precisely: batches of 6/8/10/12/15
+    items all returned in under a second regardless of text length (even
+    the shortest possible text), but a batch of 20 — including 20
+    *identical* short strings — hung past 30s every time. This is a hard
+    per-request item-count limit on this Free Edition Foundation Model API
+    endpoint, not a payload-size or text-length issue. Fixed by dropping
+    `batch_size` to 10 (safe margin below the observed 15-works/20-hangs
+    boundary) and wrapping each `query()` call in a
+    `concurrent.futures` 30-second timeout so a future recurrence fails one
+    batch in seconds instead of stalling the whole job for up to 5 minutes
+    per batch. Also switched from committing once at the very end to
+    committing after every batch, so a partial run leaves real progress
+    instead of an opaque zero-rows-updated state. Backfill of all 388
+    existing rows completed in ~27 seconds after the fix.
 
 ## Phase 4 — Databricks App (Flask frontend)
 

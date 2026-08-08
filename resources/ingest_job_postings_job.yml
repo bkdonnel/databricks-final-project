@@ -49,3 +49,20 @@ resources:
               secret_scope: "job-copilot"
               search_keywords: "software engineer,data engineer,backend developer"
               results_limit_per_source: "50"
+
+        # Phase 3: embeds any job_postings row that's new or has been
+        # re-fetched since its last embedding. Runs after ingestion so each
+        # 6h cycle both ingests and embeds in one job.
+        - task_key: embed_job_postings
+          depends_on:
+            - task_key: ingest_job_postings
+          notebook_task:
+            notebook_path: ../notebooks/embed_job_postings.py
+            base_parameters:
+              pg_host: ${var.pg_host}
+              pg_user: ${var.pg_user}
+              pg_database: ${var.pg_database}
+              endpoint_name: ${var.endpoint_name}
+              embedding_model: "databricks-gte-large-en"
+              batch_size: "10"
+              description_max_chars: "2000"

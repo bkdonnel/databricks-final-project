@@ -1,9 +1,9 @@
 # AI Job Hunting Copilot
 
 Capstone project for the "Rise of the AI Data Engineer" bootcamp. A Databricks
-App (Flask) backed by Lakebase Postgres and Databricks Vector Search, with an
-AI agent that helps a job seeker find matching postings, tailor application
-materials, and track their pipeline end to end.
+App (Flask) backed by Lakebase Postgres (with `pgvector` for semantic search),
+with an AI agent that helps a job seeker find matching postings, tailor
+application materials, and track their pipeline end to end.
 
 Users describe their skills, target roles, and preferences. The agent
 searches live job postings pulled in via a Spark pipeline, explains why a
@@ -18,9 +18,13 @@ notes — directly against Lakebase.
   schedule, normalizes them, and writes them into Lakebase.
 - **Lakebase Postgres** — relational store for users, profiles, postings,
   applications, and notes.
-- **Embeddings / vector search** — job descriptions (and the user's
-  skills/resume profile) are embedded for semantic matching, e.g. "remote
-  backend roles that don't require 5+ years of Kubernetes experience."
+- **Embeddings / vector search** — job description text is embedded (via a
+  Databricks Foundation Model API endpoint) into a `pgvector` column on
+  `job_postings` in Lakebase itself, with an HNSW index for cosine-distance
+  search — no separate Vector Search service or Delta table mirror needed.
+  A search query is combined with the user's skills/resume profile text
+  before embedding, so retrieval matches on both, e.g. "remote backend
+  roles that don't require 5+ years of Kubernetes experience."
 - **Databricks App (Flask)** — frontend for browsing postings, managing the
   pipeline board, and chatting with the agent.
 - **AI agent** — tools for search/retrieval (read) and for saving postings,
@@ -55,13 +59,15 @@ See [IMPLEMENTATION.md](IMPLEMENTATION.md) for the build plan and
 
 ## Status
 
-Planning phase — see [IMPLEMENTATION.md](IMPLEMENTATION.md) for current
-progress and next steps. No app code has been written yet.
+Phases 0-3 complete (setup, schema, Spark ingestion pipeline, semantic
+embeddings/retrieval) — see [IMPLEMENTATION.md](IMPLEMENTATION.md) for
+details and next steps. Phases 4-6 (Flask app, AI agent, deploy) not
+started yet.
 
 ## Bootcamp requirements checklist
 
-- [ ] Spark data pipeline
-- [ ] Third-party API integration (Adzuna / USAJobs / RemoteOK)
-- [ ] Unstructured data processing (job description text embeddings)
+- [x] Spark data pipeline
+- [x] Third-party API integration (Adzuna / USAJobs / RemoteOK)
+- [x] Unstructured data processing (job description text embeddings)
 - [ ] Databricks App with a frontend
 - [ ] AI agent with read + write tools
