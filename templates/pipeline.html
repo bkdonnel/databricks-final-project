@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Pipeline - Job Hunting Copilot{% endblock %}
+
+{% block content %}
+<div class="kanban">
+    {% for stage in valid_stages %}
+        <section class="kanban-col">
+            <div class="kanban-col-head">
+                <h3>{{ stage|title }}</h3>
+                <span class="kanban-count">{{ board[stage]|length }}</span>
+            </div>
+            {% for a in board[stage] %}
+                <a href="{{ url_for('posting_detail', posting_id=a.posting_id) }}" class="kanban-card">
+                    <div class="kanban-card-title">{{ a.title }}</div>
+                    <div class="kanban-card-meta">
+                        {{ a.company or "Unknown company" }}
+                        {% if a.remote_flag %} &middot; Remote{% endif %}
+                    </div>
+                    <div class="kanban-card-date">Updated {{ a.last_updated_at.strftime('%b %d, %Y') }}</div>
+                </a>
+            {% else %}
+                <p class="empty-state">Nothing here yet.</p>
+            {% endfor %}
+        </section>
+    {% endfor %}
+</div>
+{% endblock %}

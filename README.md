@@ -59,15 +59,17 @@ See [IMPLEMENTATION.md](IMPLEMENTATION.md) for the build plan and
 
 ## Status
 
-Phases 0-3 complete (setup, schema, Spark ingestion pipeline, semantic
-embeddings/retrieval) — see [IMPLEMENTATION.md](IMPLEMENTATION.md) for
-details and next steps. Phases 4-6 (Flask app, AI agent, deploy) not
-started yet.
+Phases 0-4 complete (setup, schema, Spark ingestion pipeline, semantic
+embeddings/retrieval, Flask frontend) — see
+[IMPLEMENTATION.md](IMPLEMENTATION.md) for details and next steps. The
+Flask app is a single-user personal copilot for now (no login system);
+the chat-with-agent view is deferred to Phase 5, and the app isn't
+deployed live yet (Phase 6). Phases 5-6 (AI agent, deploy) not started.
 
 ## Bootcamp requirements checklist
 
 - [x] Spark data pipeline
 - [x] Third-party API integration (Adzuna / USAJobs / RemoteOK)
 - [x] Unstructured data processing (job description text embeddings)
-- [ ] Databricks App with a frontend
+- [x] Databricks App with a frontend
 - [ ] AI agent with read + write tools

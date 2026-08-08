@@ -1,0 +1,22 @@
+command: ['flask', '--app', 'app.py', 'run', '--host', '0.0.0.0', '--port', '8000']
+
+# Real values are supplied only via local, gitignored env vars (Phase 6
+# fills in the live deployment) -- see CLAUDE.md's Secrets section. Never
+# commit real PGHOST/PGUSER/ENDPOINT_NAME/FLASK_SECRET_KEY values here.
+env:
+  - name: PGHOST
+    value: '<PGHOST>'
+  - name: PGDATABASE
+    value: '<PGDATABASE>'
+  - name: PGUSER
+    value: '<DATABRICKS_CLIENT_ID>'
+  - name: PGPORT
+    value: '5432'
+  - name: PGSSLMODE
+    value: 'require'
+  - name: ENDPOINT_NAME
+    value: '<ENDPOINT_NAME>'
+  - name: FLASK_SECRET_KEY
+    value: '<FLASK_SECRET_KEY>'
+  - name: EMBEDDING_MODEL
+    value: 'databricks-gte-large-en'

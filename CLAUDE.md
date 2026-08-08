@@ -25,7 +25,12 @@ be installed without the `[binary]` extra). Phase 3 (embeddings/semantic
 retrieval) is implemented and deployed — `pgvector` (not the standalone
 Databricks Vector Search product) on the same Lakebase instance; see
 IMPLEMENTATION.md's Phase 3 section, including a Free-Edition-specific
-embeddings-endpoint batch-size limit discovered there. Before writing
+embeddings-endpoint batch-size limit discovered there. Phase 4 (`app.py`,
+`templates/`, `static/style.css`, `app.yaml`) is written and verified
+locally against the live instance, but **not yet deployed** — filling in
+real `app.yaml` values and deploying the App is Phase 6's job. It's a
+single-user app (no login) and the chat-with-agent view is deferred to
+Phase 5 — see IMPLEMENTATION.md's Phase 4 section for why. Before writing
 code, check IMPLEMENTATION.md for which phase is active and update its
 checkboxes as steps complete.
 

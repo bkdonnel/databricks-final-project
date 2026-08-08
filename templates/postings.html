@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Search Jobs - Job Hunting Copilot{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <form method="get" action="{{ url_for('postings') }}" class="search-form">
+        <input type="text" name="q" value="{{ query_text }}" placeholder="e.g. remote backend engineer, python, postgresql" class="search-input">
+        <label class="checkbox-label">
+            <input type="checkbox" name="remote_only" value="1" {% if remote_only %}checked{% endif %}>
+            Remote only
+        </label>
+        <label class="checkbox-label">
+            <input type="checkbox" name="use_profile" value="1" {% if use_profile %}checked{% endif %}>
+            Match my profile
+        </label>
+        <button type="submit" class="btn btn-primary">Search</button>
+    </form>
+    <p class="panel-subtitle">
+        {% if query_text %}
+            Showing semantic matches for "{{ query_text }}"{% if use_profile %} combined with your profile{% endif %}.
+        {% else %}
+            Showing the most recently posted jobs. Enter a search above for semantic matching.
+        {% endif %}
+    </p>
+</section>
+
+<section class="panel">
+    {% if results %}
+        <div class="posting-list">
+            {% for r in results %}
+                <div class="posting-card">
+                    <div class="posting-card-head">
+                        <a href="{{ url_for('posting_detail', posting_id=r.posting_id) }}" class="posting-title">{{ r.title }}</a>
+                        {% if r.similarity is not none %}
+                            <span class="badge badge-similarity">{{ "%.0f"|format(r.similarity * 100) }}% match</span>
+                        {% endif %}
+                        {% if r.stage %}
+                            <span class="badge badge-stage-{{ r.stage }}">{{ r.stage }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="posting-meta">
+                        {{ r.company or "Unknown company" }} &middot; {{ r.location or "Location unknown" }}
+                        {% if r.remote_flag %} &middot; Remote{% endif %}
+                        {% if r.salary_min or r.salary_max %}
+                            &middot; ${{ "{:,}".format(r.salary_min) if r.salary_min else "?" }}&ndash;${{ "{:,}".format(r.salary_max) if r.salary_max else "?" }}
+                        {% endif %}
+                    </div>
+                    <div class="posting-actions">
+                        <a href="{{ url_for('posting_detail', posting_id=r.posting_id) }}" class="btn-link">View details</a>
+                        {% if not r.stage %}
+                            <form method="post" action="{{ url_for('save_posting', posting_id=r.posting_id) }}" class="inline-form">
+                                <button type="submit" class="btn-link">Save to pipeline</button>
+                            </form>
+                        {% endif %}
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p class="empty-state">No postings found. Try a different search or check back after the next ingestion run.</p>
+    {% endif %}
+</section>
+{% endblock %}

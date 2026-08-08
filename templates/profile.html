@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}My Profile - Job Hunting Copilot{% endblock %}
+
+{% block content %}
+<div class="two-col">
+    <section class="panel">
+        <h2>My Profile</h2>
+        <p class="panel-subtitle">
+            Used to match you against job postings -- combined with your
+            search query for semantic matching, e.g. "remote backend roles
+            that don't require 5+ years of Kubernetes".
+        </p>
+        <form method="post" action="{{ url_for('update_profile') }}" class="stacked-form">
+            <label for="target_roles">Target roles</label>
+            <input type="text" id="target_roles" name="target_roles" maxlength="200"
+                   value="{{ profile.target_roles if profile else '' }}"
+                   placeholder="e.g. Backend Engineer, Platform Engineer">
+
+            <label for="location_preference">Location preference</label>
+            <input type="text" id="location_preference" name="location_preference" maxlength="200"
+                   value="{{ profile.location_preference if profile else '' }}"
+                   placeholder="e.g. Seattle, WA">
+
+            <label for="remote_preference">Remote preference</label>
+            <select id="remote_preference" name="remote_preference">
+                {% for r in valid_remote_preferences %}
+                    <option value="{{ r }}" {% if profile and profile.remote_preference == r %}selected{% endif %}>{{ r|title }}</option>
+                {% endfor %}
+            </select>
+
+            <label for="resume_summary">Resume summary</label>
+            <textarea id="resume_summary" name="resume_summary" rows="4" maxlength="4000"
+                      placeholder="Short summary of your background">{{ profile.resume_summary if profile else '' }}</textarea>
+
+            <label for="notes">Notes</label>
+            <textarea id="notes" name="notes" rows="3" maxlength="4000"
+                      placeholder="Anything else worth matching on">{{ profile.notes if profile else '' }}</textarea>
+
+            <button type="submit" class="btn btn-primary">Save Profile</button>
+        </form>
+    </section>
+
+    <section class="panel">
+        <h2>Skills</h2>
+        {% if skills %}
+            <ul class="skill-list">
+                {% for s in skills %}
+                    <li class="skill-item">
+                        <span class="skill-name">{{ s.skill_name }}</span>
+                        <span class="skill-meta">{{ s.proficiency }}{% if s.years_experience %} &middot; {{ s.years_experience }}y{% endif %}</span>
+                        <form method="post" action="{{ url_for('delete_skill', skill_id=s.skill_id) }}" class="inline-form">
+                            <button type="submit" class="btn-link btn-link-danger">Remove</button>
+                        </form>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p class="empty-state">No skills added yet.</p>
+        {% endif %}
+
+        {% if profile %}
+        <form method="post" action="{{ url_for('add_skill') }}" class="stacked-form">
+            <label for="skill_name">Skill</label>
+            <input type="text" id="skill_name" name="skill_name" maxlength="100" required placeholder="e.g. Python">
+
+            <label for="proficiency">Proficiency</label>
+            <select id="proficiency" name="proficiency">
+                {% for p in valid_proficiencies %}
+                    <option value="{{ p }}" {% if p == 'intermediate' %}selected{% endif %}>{{ p|title }}</option>
+                {% endfor %}
+            </select>
+
+            <label for="years_experience">Years of experience</label>
+            <input type="number" id="years_experience" name="years_experience" min="0" max="60" step="0.5">
+
+            <button type="submit" class="btn btn-secondary">Add Skill</button>
+        </form>
+        {% else %}
+            <p class="empty-state">Save your profile first to add skills.</p>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

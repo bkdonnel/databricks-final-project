@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}{{ posting.title }} - Job Hunting Copilot{% endblock %}
+
+{% block content %}
+<a href="{{ url_for('postings') }}" class="back-link">&larr; Back to search</a>
+
+<div class="two-col">
+    <section class="panel">
+        <div class="posting-card-head">
+            <h2>{{ posting.title }}</h2>
+            {% if application %}
+                <span class="badge badge-stage-{{ application.stage }}">{{ application.stage }}</span>
+            {% endif %}
+        </div>
+        <p class="ticket-meta">
+            {{ posting.company or "Unknown company" }} &middot; {{ posting.location or "Location unknown" }}
+            {% if posting.remote_flag %} &middot; Remote{% endif %}
+            {% if posting.salary_min or posting.salary_max %}
+                &middot; ${{ "{:,}".format(posting.salary_min) if posting.salary_min else "?" }}&ndash;${{ "{:,}".format(posting.salary_max) if posting.salary_max else "?" }}
+            {% endif %}
+        </p>
+        {% if posting.url %}
+            <p><a href="{{ posting.url }}" target="_blank" rel="noopener">View original posting &rarr;</a></p>
+        {% endif %}
+
+        <h3>Description</h3>
+        <div class="description-block">{{ posting.description or "No description available." }}</div>
+
+        {% if not application %}
+            <form method="post" action="{{ url_for('save_posting', posting_id=posting.posting_id) }}" class="stacked-form">
+                <button type="submit" class="btn btn-primary">Save to pipeline</button>
+            </form>
+        {% endif %}
+    </section>
+
+    <section class="panel">
+        {% if application %}
+            <h2>Manage</h2>
+            <form method="post" action="{{ url_for('update_stage', posting_id=posting.posting_id) }}" class="stacked-form">
+                <label for="stage">Pipeline stage</label>
+                <select id="stage" name="stage">
+                    {% for s in valid_stages %}
+                        <option value="{{ s }}" {% if s == application.stage %}selected{% endif %}>{{ s|title }}</option>
+                    {% endfor %}
+                </select>
+                <button type="submit" class="btn btn-secondary">Update Stage</button>
+            </form>
+
+            <hr class="divider">
+
+            <h3>Interview Notes</h3>
+            <div class="message-list">
+                {% for n in notes %}
+                    <div class="message">
+                        <div class="message-head">
+                            <strong>{{ n.author }}</strong>
+                            <span class="message-date">{{ n.created_at.strftime('%b %d, %Y %I:%M %p') }}</span>
+                        </div>
+                        <div class="message-body">{{ n.note_text }}</div>
+                        {% if n.follow_up_date %}
+                            <div class="message-date">Follow up: {{ n.follow_up_date.strftime('%b %d, %Y') }}</div>
+                        {% endif %}
+                    </div>
+                {% else %}
+                    <p class="empty-state">No notes yet.</p>
+                {% endfor %}
+            </div>
+            <form method="post" action="{{ url_for('add_note', posting_id=posting.posting_id) }}" class="stacked-form">
+                <label for="note_text">Add a note</label>
+                <textarea id="note_text" name="note_text" rows="3" required maxlength="2000" placeholder="e.g. Phone screen scheduled for next week"></textarea>
+                <label for="follow_up_date">Follow-up date (optional)</label>
+                <input type="date" id="follow_up_date" name="follow_up_date">
+                <button type="submit" class="btn btn-secondary">Add Note</button>
+            </form>
+
+            <hr class="divider">
+
+            <h3>Contacts</h3>
+            <div class="message-list">
+                {% for c in contacts %}
+                    <div class="message">
+                        <div class="message-head">
+                            <strong>{{ c.name }}</strong>
+                            <span class="message-date">{{ c.role or "" }}</span>
+                        </div>
+                        {% if c.email %}<div class="message-body">{{ c.email }}</div>{% endif %}
+                        {% if c.linkedin_url %}<div class="message-body"><a href="{{ c.linkedin_url }}" target="_blank" rel="noopener">LinkedIn</a></div>{% endif %}
+                    </div>
+                {% else %}
+                    <p class="empty-state">No contacts yet.</p>
+                {% endfor %}
+            </div>
+            <form method="post" action="{{ url_for('add_contact', posting_id=posting.posting_id) }}" class="stacked-form">
+                <label for="name">Name *</label>
+                <input type="text" id="name" name="name" required maxlength="200" placeholder="e.g. Alex Rivera">
+                <label for="role">Role</label>
+                <input type="text" id="role" name="role" maxlength="200" placeholder="e.g. Technical Recruiter">
+                <label for="email">Email</label>
+                <input type="email" id="email" name="email" maxlength="200">
+                <label for="linkedin_url">LinkedIn URL</label>
+                <input type="url" id="linkedin_url" name="linkedin_url" maxlength="500">
+                <button type="submit" class="btn btn-secondary">Add Contact</button>
+            </form>
+        {% else %}
+            <p class="empty-state">Save this posting to your pipeline to track notes and contacts.</p>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

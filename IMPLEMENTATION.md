@@ -193,17 +193,46 @@ local testing before the real pipeline is wired up.
 
 Mirror the structure of `lakebase-support-app`:
 
-- [ ] `app.py` — routes for: profile setup, job search/browse (calls the
+- [x] `app.py` — routes for: profile setup, job search/browse (calls the
       retrieval function), pipeline board (kanban-style view by stage),
-      posting detail with notes/contacts, chat-with-agent view.
-- [ ] `templates/` + `static/style.css` — UI, consistent with the
+      posting detail with notes/contacts.
+- [x] `templates/` + `static/style.css` — UI, consistent with the
       dark-mode styling used previously.
-- [ ] `app.yaml` — runtime config (PGHOST, PGUSER, PGDATABASE,
+- [x] `app.yaml` — runtime config (PGHOST, PGUSER, PGDATABASE,
       ENDPOINT_NAME, FLASK_SECRET_KEY, any vector-search endpoint env
       vars).
-- [ ] Reuse the OAuth-token-rotation connection pattern from
+- [x] Reuse the OAuth-token-rotation connection pattern from
       `lakebase-support-app/app.py` — don't use a static Postgres
       password.
+
+  **Scope decisions:**
+  - **No login/multi-user auth.** The schema supports multiple `users`,
+    but only one is seeded (`user_id=1`, Jane Doe) and the reference app
+    has no auth either. Built as a single-user personal copilot
+    (`DEFAULT_USER_ID = 1` in `app.py`) rather than adding a login system.
+  - **Chat-with-agent view deferred to Phase 5**, not built here despite
+    being in this phase's original list above. Phase 5 is explicitly
+    "wire the agent into the Flask app (a chat endpoint/view)" — building
+    a chat page now with no agent behind it would be throwaway UI once
+    Phase 5 adds real tool-calling, and CLAUDE.md's "Don't" section rules
+    out scaffolding agent code ahead of its phase.
+
+  **Implementation:** connection pool + `OAuthConnection` class mirror
+  `lakebase-support-app/app.py` exactly, except `psycopg[pool]` (no
+  `[binary]` extra) per this workspace's Free Edition psycopg gotcha.
+  Retrieval reuses Phase 3's pgvector approach directly in `app.py`
+  (`embed()`/`profile_context()`/cosine-similarity SQL), not imported from
+  `scripts/search_postings.py` — matches this repo's existing convention
+  of each component defining its own small pieces inline rather than
+  cross-file imports. `app.yaml` has placeholder values only; filling in
+  real values and actually deploying the App is Phase 6's job, not this
+  one. Verified locally: ran `flask run` with real (uncommitted) env vars
+  against the live Lakebase instance and exercised every route/write path
+  with curl — profile edit + validation, skill add/remove, search (plain
+  and profile-combined), save-to-pipeline, stage transitions, notes,
+  contacts, and the kanban board all confirmed against real data. No
+  browser tool was available this session, so CSS/layout rendering was
+  not visually confirmed, only functional behavior via HTTP requests.
 
 ## Phase 5 — AI agent
 
