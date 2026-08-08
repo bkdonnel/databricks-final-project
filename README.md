@@ -1,5 +1,9 @@
 # AI Job Hunting Copilot
 
+
+### Link to App:
+https://bootcamp-job-search-agent-7474658268863295.aws.databricksapps.com/postings
+
 Capstone project for the "Rise of the AI Data Engineer" bootcamp. A Databricks
 App (Flask) backed by Lakebase Postgres (with `pgvector` for semantic search),
 with an AI agent that helps a job seeker find matching postings, tailor
