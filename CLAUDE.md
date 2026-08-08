@@ -11,11 +11,14 @@ truth for "what's done / what's next") is in IMPLEMENTATION.md.
 
 ## Status
 
-Planning phase. No application code exists yet — only planning docs
-(README.md, CLAUDE.md, IMPLEMENTATION.md), committed and pushed to
-https://github.com/bkdonnel/databricks-final-project (public). Before
-writing code, check IMPLEMENTATION.md for which phase is active and update
-its checkboxes as steps complete.
+Repo is public at https://github.com/bkdonnel/databricks-final-project.
+Phase 0 (API keys, Databricks App, Lakebase project `job-search-agent-db`,
+Vector Search) and Phase 1 (`schema.sql`, run against the live instance) are
+complete; `setup_secrets.py` (loads Adzuna/USAJobs keys into the
+`job-copilot` Databricks secret scope) is written and run. Phase 2 (Spark
+ingestion pipeline) has a finalized design in IMPLEMENTATION.md but no code
+written yet. Before writing code, check IMPLEMENTATION.md for which phase
+is active and update its checkboxes as steps complete.
 
 ## Required architecture (bootcamp rubric — do not drop any of these)
 
@@ -33,18 +36,33 @@ its checkboxes as steps complete.
 This project mirrors the structure of a prior bootcamp exercise
 (`lakebase-support-app`): Flask app in `app.py`, Databricks Apps config in
 `app.yaml`, schema + grants + sample data in `schema.sql`, `templates/` +
-`static/` for the UI, `requirements.txt` for deps.
+`static/` for the UI, `requirements.txt` for deps. For scheduled Databricks
+Jobs (the Phase 2 Spark pipeline), mirror the Databricks Asset Bundle
+scaffolding from another prior exercise (`databricks-lakebase-app-day-2`):
+`databricks.yml` + `resources/*.yml` job definitions — but not that repo's
+Lakebase auth (static password) or its notebook (runs on a Spark cluster
+but never actually uses PySpark DataFrames — don't copy that part).
 
 - **Lakebase auth**: connect using the OAuth-token-rotation pattern (a
   `psycopg.Connection` subclass that calls
   `WorkspaceClient().postgres.generate_database_credential()` per
-  connection) — not a static password.
+  connection) — not a static password. Define this class inline in each
+  component that needs it (Flask app, ingestion notebook) rather than
+  factoring it into a shared importable module — Databricks Repos
+  cross-file imports from notebooks are path-fragile, and the class is
+  only ~15 lines.
 - **Secrets**: never commit real `PGHOST` / `PGUSER` / `ENDPOINT_NAME` /
   API keys / `FLASK_SECRET_KEY` values or service-principal UUIDs. Use
   placeholders in `schema.sql` and `app.yaml` (e.g. `<DATABRICKS_CLIENT_ID>`)
   and real values only in local, gitignored env vars. Double check
   `schema.sql` specifically — it's the easiest place for a real UUID to
-  slip in.
+  slip in. Actual credentials (third-party API keys) go in a Databricks
+  secret scope via `setup_secrets.py`, read back with `dbutils.secrets.get`
+  in job/notebook contexts. Non-secret connection identifiers for
+  Databricks Jobs (`PGHOST`/`PGUSER`/`PGDATABASE`/`ENDPOINT_NAME`) are NOT
+  secrets — pass them as Databricks Asset Bundle `variables:` (no committed
+  defaults) supplied via local `BUNDLE_VAR_*` env vars, the Job-context
+  equivalent of `app.yaml`'s env vars for the Flask app.
 - **Validation**: validate user input server-side in Flask routes
   (required fields, length limits, enum whitelisting for pipeline
   stage/priority-style fields), flashing errors back to the UI.

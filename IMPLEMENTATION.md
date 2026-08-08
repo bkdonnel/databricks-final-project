@@ -61,6 +61,55 @@ local testing before the real pipeline is wired up.
       requirement, so it needs to be a repeatable job, not a notebook run
       once by hand.
 - [ ] Log row counts fetched/inserted/updated per run for a sanity check.
+- [ ] **Design finalized (not yet implemented)** — see full plan at
+      `/Users/bryandonnelly/.claude/plans/fizzy-giggling-peacock.md`.
+      Summary:
+    - Fetch raw JSON from the 3 APIs on the driver, build a Spark
+      DataFrame (explicit `StructType`) from the normalized records, use
+      real `.dropDuplicates(["external_source","external_id"])` +
+      `.count()` — genuine Spark processing, not just code that happens to
+      run on a cluster.
+    - `.collect()` the deduped DataFrame and upsert via a single
+      OAuth-rotated `psycopg` (v3) connection:
+      `INSERT ... ON CONFLICT (external_source, external_id) DO UPDATE
+      ... RETURNING (xmax = 0) AS inserted` to count inserted vs. updated
+      in one pass; `DO UPDATE` explicitly refreshes `fetched_at`.
+    - OAuth-token-rotation auth (per CLAUDE.md, pattern from
+      `lakebase-support-app/app.py:16-46`), defined inline in the
+      notebook — no shared `ingestion/` package (Databricks Repos
+      cross-file imports are path-fragile; the class is ~15 lines, fine
+      to duplicate later in Phase 4's Flask app).
+    - Everything self-contained in `notebooks/ingest_job_postings.py`
+      (widgets, secret reads via `dbutils.secrets.get`, 3 fetch/normalize
+      functions, OAuthConnection, Spark dedupe, upsert+logging).
+    - Deployed via a Databricks Asset Bundle: `databricks.yml` +
+      `resources/ingest_job_postings_job.yml` — cron every 6h
+      (`"0 0 0/6 * * ?"`), `pause_status: PAUSED` until a manual run is
+      validated, single-node job cluster (`num_workers: 0`),
+      `email_notifications.on_failure`.
+    - `PGHOST`/`PGUSER`/`PGDATABASE`/`ENDPOINT_NAME` supplied as DAB
+      `variables:` (no committed defaults) via local `BUNDLE_VAR_*` env
+      vars — never committed. Secret scope `job-copilot` (already set up)
+      covers the Adzuna/USAJobs API keys.
+    - Each fetch function wrapped in its own try/except (return `[]` on
+      failure, log a warning) so one flaky free API doesn't kill the run;
+      raise if *all three* return zero rows so failure alerting fires.
+    - RemoteOK needs a descriptive `User-Agent` header (bare UA → 403)
+      and skips response element 0 (legal notice, not a posting).
+      USAJobs needs `Host`/`User-Agent`/`Authorization-Key` headers (not
+      a bearer token) — exact `PositionLocation`/`PositionRemuneration`
+      nesting still needs confirming against a live response.
+    - New files planned: `databricks.yml`, `resources/
+      ingest_job_postings_job.yml`, `notebooks/ingest_job_postings.py`,
+      `requirements.txt` (local-dev only, just `requests`),
+      `scripts/verify_fetchers.py` (local smoke-test harness for the 3
+      fetch/normalize functions against real `.env` keys, before wiring
+      into the notebook). Also add `.databricks/` to `.gitignore`.
+    - Full field-by-field normalization mapping (Adzuna/USAJobs/RemoteOK
+      → `job_postings` columns) and the verification plan (local
+      smoke-test → deploy → manual run → Lakebase sanity queries
+      including a second run to prove the upsert path) are in the plan
+      file above — read it before resuming implementation.
 
 ## Phase 3 — Embeddings / semantic retrieval
 
