@@ -1,0 +1,42 @@
+# Databricks Asset Bundle config for this project.
+# Deploy with: databricks bundle deploy -t dev
+# Wires up notebooks/ingest_job_postings.py as a scheduled Workflow (see
+# resources/ingest_job_postings_job.yml) — the Phase 2 Spark ingestion
+# pipeline for the AI Job Hunting Copilot.
+
+bundle:
+  name: databricks-final-project
+
+include:
+  - resources/*.yml
+
+variables:
+  pg_host:
+    description: Lakebase Postgres host for job-search-agent-db (non-secret connection identifier)
+  pg_user:
+    description: >-
+      Postgres role used to connect (non-secret) — the deploying user's own
+      identity (e.g. their email), not the App's service principal. The
+      job has no run_as (Free Edition lacks the account-level access
+      needed to bind a job to a service principal), so it runs as its
+      owner, and the OAuth credential API requires the connecting role to
+      match the job's actual run-as identity. The deploying user already
+      has full read/write on job_postings as the Lakebase instance owner.
+  pg_database:
+    description: Postgres database name (non-secret)
+  endpoint_name:
+    description: >-
+      Full Postgres Autoscaling endpoint resource path used to mint OAuth
+      database credentials (non-secret), e.g.
+      projects/<project>/branches/<branch>/endpoints/<endpoint> — NOT just
+      the project's short display name (confirmed by testing against the
+      live instance; the short name is rejected).
+
+targets:
+  dev:
+    mode: development
+    default: true
+    # No workspace.host here on purpose — the real host isn't committed
+    # (would reveal the specific workspace in this public repo). Supply it
+    # via `databricks bundle <cmd> --profile <your-local-profile>`, which
+    # resolves the host from ~/.databrickscfg instead.

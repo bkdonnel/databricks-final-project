@@ -53,63 +53,66 @@ local testing before the real pipeline is wired up.
 
 ## Phase 2 — Spark ingestion pipeline
 
-- [ ] Write a Spark job that calls Adzuna / USAJobs / RemoteOK, normalizes
+- [x] Write a Spark job that calls Adzuna / USAJobs / RemoteOK, normalizes
       each source's response into the `job_postings` schema, dedupes on
       `(external_source, external_id)`, and upserts into Lakebase.
-- [ ] Run it as a Databricks Job (scheduled, e.g. every few hours) rather
-      than a one-off script — this is the "data pipeline in Spark"
-      requirement, so it needs to be a repeatable job, not a notebook run
-      once by hand.
-- [ ] Log row counts fetched/inserted/updated per run for a sanity check.
-- [ ] **Design finalized (not yet implemented)** — see full plan at
-      `/Users/bryandonnelly/.claude/plans/fizzy-giggling-peacock.md`.
-      Summary:
-    - Fetch raw JSON from the 3 APIs on the driver, build a Spark
-      DataFrame (explicit `StructType`) from the normalized records, use
-      real `.dropDuplicates(["external_source","external_id"])` +
-      `.count()` — genuine Spark processing, not just code that happens to
-      run on a cluster.
-    - `.collect()` the deduped DataFrame and upsert via a single
-      OAuth-rotated `psycopg` (v3) connection:
-      `INSERT ... ON CONFLICT (external_source, external_id) DO UPDATE
-      ... RETURNING (xmax = 0) AS inserted` to count inserted vs. updated
-      in one pass; `DO UPDATE` explicitly refreshes `fetched_at`.
-    - OAuth-token-rotation auth (per CLAUDE.md, pattern from
-      `lakebase-support-app/app.py:16-46`), defined inline in the
-      notebook — no shared `ingestion/` package (Databricks Repos
-      cross-file imports are path-fragile; the class is ~15 lines, fine
-      to duplicate later in Phase 4's Flask app).
-    - Everything self-contained in `notebooks/ingest_job_postings.py`
-      (widgets, secret reads via `dbutils.secrets.get`, 3 fetch/normalize
-      functions, OAuthConnection, Spark dedupe, upsert+logging).
-    - Deployed via a Databricks Asset Bundle: `databricks.yml` +
-      `resources/ingest_job_postings_job.yml` — cron every 6h
-      (`"0 0 0/6 * * ?"`), `pause_status: PAUSED` until a manual run is
-      validated, single-node job cluster (`num_workers: 0`),
-      `email_notifications.on_failure`.
-    - `PGHOST`/`PGUSER`/`PGDATABASE`/`ENDPOINT_NAME` supplied as DAB
-      `variables:` (no committed defaults) via local `BUNDLE_VAR_*` env
-      vars — never committed. Secret scope `job-copilot` (already set up)
-      covers the Adzuna/USAJobs API keys.
-    - Each fetch function wrapped in its own try/except (return `[]` on
-      failure, log a warning) so one flaky free API doesn't kill the run;
-      raise if *all three* return zero rows so failure alerting fires.
-    - RemoteOK needs a descriptive `User-Agent` header (bare UA → 403)
-      and skips response element 0 (legal notice, not a posting).
-      USAJobs needs `Host`/`User-Agent`/`Authorization-Key` headers (not
-      a bearer token) — exact `PositionLocation`/`PositionRemuneration`
-      nesting still needs confirming against a live response.
-    - New files planned: `databricks.yml`, `resources/
-      ingest_job_postings_job.yml`, `notebooks/ingest_job_postings.py`,
-      `requirements.txt` (local-dev only, just `requests`),
-      `scripts/verify_fetchers.py` (local smoke-test harness for the 3
-      fetch/normalize functions against real `.env` keys, before wiring
-      into the notebook). Also add `.databricks/` to `.gitignore`.
-    - Full field-by-field normalization mapping (Adzuna/USAJobs/RemoteOK
-      → `job_postings` columns) and the verification plan (local
-      smoke-test → deploy → manual run → Lakebase sanity queries
-      including a second run to prove the upsert path) are in the plan
-      file above — read it before resuming implementation.
+- [x] Run it as a Databricks Job (scheduled every 6h) rather than a
+      one-off script.
+- [x] Log row counts fetched/deduped/inserted/updated per run.
+- [x] **Implemented and verified against the live instance** —
+      `notebooks/ingest_job_postings.py` + `databricks.yml` +
+      `resources/ingest_job_postings_job.yml`. Two manual runs confirmed:
+      first run inserted 340 rows (151 Adzuna, 88 USAJobs, 101 RemoteOK,
+      zero duplicate `(external_source, external_id)` pairs); second run
+      advanced `fetched_at` on an existing row without creating a
+      duplicate, proving the `DO UPDATE` path. Schedule is `UNPAUSED`.
+
+  Real deviations discovered from the original design (all forced by
+  this workspace being a **Databricks Free Edition** account — read
+  before touching this pipeline again):
+    - **Serverless only, no job clusters.** Free Edition rejects
+      `new_cluster`/`job_clusters` job specs ("Only serverless compute is
+      supported"). The task has no cluster reference at all — omitting it
+      runs the notebook on serverless compute, which still provides a
+      real Spark session for the dedupe step.
+    - **No `run_as` service principal.** Binding a job to run as a
+      service principal requires the account-level "Service Principal
+      User" role, and Free Edition has no account-console/account-API
+      access to grant it — confirmed via a real `terraform apply` error,
+      not just docs. The job instead runs as its owner (the deploying
+      user), and `schema.sql`'s service-principal grants are unused by
+      this job; the deploying user already has full read/write on
+      `job_postings` as the Lakebase instance owner. This SP/run_as
+      limitation is specific to Jobs — it does **not** apply to Phase 4's
+      Databricks App, which runs as its own service principal natively
+      (no `run_as` binding involved).
+    - **Lakebase project is on the newer "Postgres Autoscaling" API, not
+      "Database Instances."** `w.database.generate_database_credential()`
+      (instance_names=[...]) fails with "not found" for this project;
+      the correct call is `w.postgres.generate_database_credential(
+      endpoint=...)`, and `endpoint` must be the **full resource path**
+      (`projects/<project>/branches/<branch>/endpoints/<endpoint>`, e.g.
+      `projects/job-search-agent-db/branches/production/endpoints/primary`)
+      — the short project name is rejected. Same likely applies when
+      Phase 4's Flask app connects.
+    - **`psycopg[binary]`'s compiled extension crashes the serverless
+      Python kernel** (`SIGABRT` on `import psycopg` inside
+      `psycopg/pq/__init__.py`). Fixed by installing plain `psycopg` (no
+      `[binary]`/`[c]` extra — falls back to the ctypes/system-libpq
+      backend) instead.
+    - **`psycopg_pool.ConnectionPool` swallows the real connection
+      error** behind a generic `PoolTimeout` after 30s. Since this
+      notebook only needs one connection for a batch upsert (not
+      concurrent-request pooling like a Flask app), it connects directly
+      via `OAuthConnection.connect(...)` instead of a pool.
+    - **`%pip install "databricks-sdk>=0.40.0"` silently no-ops** if the
+      runtime's pre-installed version already satisfies the bound (it
+      did, and that version predates the `.postgres` API) — needed
+      `--upgrade` to actually get a version with `w.postgres`.
+    - Local smoke-test (`scripts/verify_fetchers.py`) confirmed all 3
+      fetchers return correctly-shaped data. RemoteOK did *not*
+      reproduce the documented 403-without-User-Agent behavior on this
+      run, but a descriptive `User-Agent` is still sent defensively.
 
 ## Phase 3 — Embeddings / semantic retrieval
 

@@ -1,0 +1,51 @@
+# Databricks Workflow that runs notebooks/ingest_job_postings.py on a
+# schedule. The notebook fetches job postings from Adzuna, USAJobs, and
+# RemoteOK, dedupes with a Spark DataFrame, and upserts into the Lakebase
+# `job_postings` table.
+#
+# Deploy: databricks bundle deploy -t dev
+# Run once manually: databricks bundle run ingest_job_postings_job -t dev
+# (works even while paused — pause only suppresses the cron trigger)
+
+resources:
+  jobs:
+    ingest_job_postings_job:
+      name: "[${bundle.target}] Ingest Job Postings"
+
+      # No run_as: defaults to running as the deploying user. Free Edition
+      # has no account-console/account-API access, and binding a job to run
+      # as a service principal requires the account-level "Service
+      # Principal User" role — unavailable here. The deploying user already
+      # has full read/write on job_postings as the Lakebase instance owner,
+      # so pg_user below is set to that user's identity, not the App's SP.
+
+      # Every 6 hours. Unpaused — manual runs validated end-to-end
+      # (fetch, dedupe, insert, and upsert-on-rerun all confirmed against
+      # the live instance).
+      schedule:
+        quartz_cron_expression: "0 0 0/6 * * ?"
+        timezone_id: "UTC"
+        pause_status: UNPAUSED
+
+      email_notifications:
+        on_failure:
+          - ${workspace.current_user.userName}
+
+      max_concurrent_runs: 1
+
+      # No job_clusters — this Free Edition workspace only supports
+      # serverless compute. Omitting a cluster reference on the task below
+      # runs it on serverless, which still provides a real Spark session
+      # for the dedupe step.
+      tasks:
+        - task_key: ingest_job_postings
+          notebook_task:
+            notebook_path: ../notebooks/ingest_job_postings.py
+            base_parameters:
+              pg_host: ${var.pg_host}
+              pg_user: ${var.pg_user}
+              pg_database: ${var.pg_database}
+              endpoint_name: ${var.endpoint_name}
+              secret_scope: "job-copilot"
+              search_keywords: "software engineer,data engineer,backend developer"
+              results_limit_per_source: "50"

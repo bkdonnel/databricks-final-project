@@ -16,9 +16,14 @@ Phase 0 (API keys, Databricks App, Lakebase project `job-search-agent-db`,
 Vector Search) and Phase 1 (`schema.sql`, run against the live instance) are
 complete; `setup_secrets.py` (loads Adzuna/USAJobs keys into the
 `job-copilot` Databricks secret scope) is written and run. Phase 2 (Spark
-ingestion pipeline) has a finalized design in IMPLEMENTATION.md but no code
-written yet. Before writing code, check IMPLEMENTATION.md for which phase
-is active and update its checkboxes as steps complete.
+ingestion pipeline) is implemented and deployed — see IMPLEMENTATION.md's
+Phase 2 section for real deviations discovered along the way (this
+workspace is **Databricks Free Edition**: serverless-only compute, no
+`run_as` service principal for Jobs, Lakebase uses the newer "Postgres
+Autoscaling" credential API with full endpoint-path resource names, and
+`psycopg` must be installed without the `[binary]` extra). Before writing
+code, check IMPLEMENTATION.md for which phase is active and update its
+checkboxes as steps complete.
 
 ## Required architecture (bootcamp rubric — do not drop any of these)
 
