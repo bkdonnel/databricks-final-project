@@ -318,15 +318,64 @@ Mirror the structure of `lakebase-support-app`:
 
 ## Phase 6 — Deploy & verify
 
-- [ ] Fill in real `app.yaml` values locally only; keep placeholders in
+- [x] Fill in real `app.yaml` values locally only; keep placeholders in
       anything committed.
-- [ ] Deploy via the Apps UI (Git-connected) or `databricks apps deploy`,
+- [x] Deploy via the Apps UI (Git-connected) or `databricks apps deploy`,
       following whichever path matches the workspace being used.
-- [ ] Verify against the bootcamp rubric: Spark pipeline runs and
+- [x] Verify against the bootcamp rubric: Spark pipeline runs and
       populates Lakebase, third-party API integration works end to end,
       embeddings + semantic search return sensible results, the app
       frontend is usable, and the agent can both retrieve and write.
-- [ ] Before submitting: scan the repo for committed secrets (API keys,
+- [x] Before submitting: scan the repo for committed secrets (API keys,
       `PGHOST`/`PGUSER`/`ENDPOINT_NAME`, service-principal UUIDs) and
       scrub them — this tripped up the `lakebase-support-app` submission
       previously.
+
+  **Deployment mechanism found by testing live** (the App resource,
+  `bootcamp-job-search-agent`, was already created in Phase 0 with a
+  `git_repository` link and a `default_source_code_path` pointing at a
+  Databricks Git folder under `/Workspace/Users/<user>/...`): pushing to
+  `origin/main` keeps that Git folder in sync, but `app.yaml`'s *real*
+  values still need to land only in that Workspace copy, never in the
+  git-tracked file. Used `databricks workspace import <path>/app.yaml
+  --file <local-real-values-copy> --overwrite` to push real values into
+  the synced Workspace folder without touching git, then
+  `databricks apps start`/`databricks apps deploy bootcamp-job-search-agent
+  --source-code-path <that path>` to build and run it. `PGUSER` for the
+  deployed app is the App's own `service_principal_client_id` (matching
+  the Postgres role `schema.sql` already granted, not the developer's own
+  identity used for local `flask run` testing).
+
+  **Real deviation #1 — a second, opposite psycopg gotcha for the Apps
+  container.** The app crashed on first deploy:
+  `ImportError: no pq wrapper available ... libpq library not found`.
+  Phase 4 had set `psycopg[pool]` (no `[binary]`) in `requirements.txt`
+  based on the *notebook* gotcha (serverless Spark kernel SIGABRTs on the
+  compiled `[binary]` extension, but that kernel does have system `libpq`
+  for the plain build's ctypes fallback). The Databricks **Apps**
+  container is a completely different runtime — a plain Linux container
+  with no `libpq` installed at all — so plain `psycopg` has no fallback to
+  reach. Fixed by changing `requirements.txt` to `psycopg[binary,pool]`
+  for this component specifically; the notebook's own inline
+  `%pip install psycopg` (no extras) is untouched and still correct for
+  its environment. Redeployed and the app started successfully.
+
+  **Real deviation #2 — workspace QPS rate limit on the FMAPI chat
+  endpoint.** A second chat message right after the first returned
+  `HTTP 429` in the browser. Reproduced locally: 8 rapid requests to
+  `databricks-meta-llama-3-3-70b-instruct` hit
+  `REQUEST_LIMIT_EXCEEDED: Exceeded workspace QPS rate limit` on request
+  #6, then request #7 immediately succeeded — a short burst limit, not a
+  sustained quota (a multi-tool-call agent turn can easily fire several
+  requests within a second or two). Fixed in `agent.py`'s `query_chat()`
+  with a short retry-with-backoff (0s/1s/2s/4s) specifically on 429
+  responses. Redeployed and confirmed live: back-to-back chat messages no
+  longer surface the error.
+
+  **Verified on the live deployed app** (not just local `flask run`):
+  postings search/browse, and a `/chat` conversation exercising the agent
+  (profile-matched search, tool calls, and the fix above) all confirmed
+  working at
+  `https://bootcamp-job-search-agent-7474658268863295.aws.databricksapps.com`.
+  Final `requirements.txt`/`agent.py` fixes committed and pushed to
+  `origin/main` so the git-tracked source matches what's actually running.

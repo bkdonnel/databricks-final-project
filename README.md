@@ -59,13 +59,13 @@ See [IMPLEMENTATION.md](IMPLEMENTATION.md) for the build plan and
 
 ## Status
 
-Phases 0-5 complete (setup, schema, Spark ingestion pipeline, semantic
-embeddings/retrieval, Flask frontend, AI agent with tools) — see
-[IMPLEMENTATION.md](IMPLEMENTATION.md) for details and next steps. The
-Flask app is a single-user personal copilot for now (no login system).
-The agent is wired into a `/chat` view and can both retrieve and write
-against Lakebase, verified locally against the live instance. The app
-isn't deployed live yet — that's Phase 6.
+All phases complete (setup, schema, Spark ingestion pipeline, semantic
+embeddings/retrieval, Flask frontend, AI agent with tools, deployment) —
+see [IMPLEMENTATION.md](IMPLEMENTATION.md) for full details, including
+real deviations discovered along the way. The Flask app is a single-user
+personal copilot for now (no login system). The agent is wired into a
+`/chat` view and can both retrieve and write against Lakebase. Deployed
+and verified live as a Databricks App.
 
 ## Bootcamp requirements checklist
 

@@ -16,6 +16,7 @@ returns real tool_calls (not prose) for a trivial dummy tool.
 """
 import json
 import os
+import time
 
 import requests
 from databricks.sdk import WorkspaceClient
@@ -23,6 +24,7 @@ from databricks.sdk import WorkspaceClient
 AGENT_MODEL = os.environ.get("AGENT_MODEL", "databricks-meta-llama-3-3-70b-instruct")
 MAX_TOOL_ITERATIONS = 6
 REQUEST_TIMEOUT_SECONDS = 30  # FMAPI endpoints hang rather than error (see Phase 3 gotcha)
+RATE_LIMIT_RETRY_DELAYS = (1, 2, 4)  # seconds; workspace QPS limit clears almost immediately
 
 w = WorkspaceClient()
 
@@ -233,21 +235,34 @@ def query_chat(messages):
         "tool_choice": "auto",
         "max_tokens": 1024,
     }
-    try:
-        resp = requests.post(url, headers=headers, json=body, timeout=REQUEST_TIMEOUT_SECONDS)
-    except requests.Timeout:
-        return {
-            "role": "assistant",
-            "content": "Sorry, the model took too long to respond. Please try again.",
-        }
 
-    if resp.status_code != 200:
+    # Workspace QPS limits on the FMAPI endpoint are short bursts, not a
+    # sustained quota -- a multi-tool-call turn can easily fire several
+    # requests within a second or two and trip REQUEST_LIMIT_EXCEEDED, but
+    # the very next request typically succeeds. Retry with a short backoff
+    # instead of surfacing the 429 to the user.
+    delays = (0,) + RATE_LIMIT_RETRY_DELAYS
+    for attempt, delay in enumerate(delays):
+        if delay:
+            time.sleep(delay)
+        try:
+            resp = requests.post(url, headers=headers, json=body, timeout=REQUEST_TIMEOUT_SECONDS)
+        except requests.Timeout:
+            return {
+                "role": "assistant",
+                "content": "Sorry, the model took too long to respond. Please try again.",
+            }
+
+        if resp.status_code == 200:
+            return resp.json()["choices"][0]["message"]
+
+        if resp.status_code == 429 and attempt < len(delays) - 1:
+            continue
+
         return {
             "role": "assistant",
             "content": f"Sorry, the model request failed (HTTP {resp.status_code}).",
         }
-
-    return resp.json()["choices"][0]["message"]
 
 
 def run_agent_turn(messages, tool_dispatch):
