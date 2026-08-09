@@ -114,6 +114,25 @@ local testing before the real pipeline is wired up.
       reproduce the documented 403-without-User-Agent behavior on this
       run, but a descriptive `User-Agent` is still sent defensively.
 
+  **Post-submission fix (grader feedback):** `posted_at` was passed
+  through from each source's raw value as-is, relying on Postgres's
+  implicit string-to-timestamp cast. That's a real latent bug for
+  RemoteOK specifically: its `date` field is missing on some records,
+  falling back to `epoch` (a Unix-timestamp digit string), which a
+  `timestamp` column rejects outright rather than casting. Fixed by
+  adding `normalize_posted_at()` — parses ISO8601 strings (Adzuna/
+  USAJobs) and epoch values (RemoteOK's fallback) into real Python
+  `datetime` objects up front, returning `None` for anything unparseable
+  instead of letting one bad record fail the batch. The Spark schema's
+  `posted_at` field changed from `StringType` to `TimestampType` to match
+  — `row.asDict()` now hands psycopg a real `datetime`, not a string, so
+  there's no implicit casting left at all. Verified live: redeployed the
+  bundle and ran the job manually (`databricks bundle run
+  ingest_job_postings_job`); queried Lakebase afterward and confirmed all
+  337 rows fetched that run (all 3 sources) got valid non-null
+  `posted_at` timestamps, including RemoteOK rows exercising the epoch
+  path.
+
 ## Phase 3 — Embeddings / semantic retrieval
 
 - [x] Pick an embedding model available in the workspace (e.g. a

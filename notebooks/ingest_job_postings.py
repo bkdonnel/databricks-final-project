@@ -49,6 +49,8 @@ assert PG_HOST and PG_USER and PG_DATABASE and ENDPOINT_NAME, (
 
 # COMMAND ----------
 
+from datetime import datetime, timezone
+
 import requests
 
 import psycopg
@@ -59,6 +61,7 @@ from pyspark.sql.types import (
     StringType,
     BooleanType,
     IntegerType,
+    TimestampType,
 )
 
 # COMMAND ----------
@@ -155,6 +158,33 @@ def fetch_remoteok():
 # Normalize functions -> dict matching job_postings columns, or None to
 # drop the record (missing external_id or title).
 # ---------------------------------------------------------------------------
+def normalize_posted_at(value):
+    """Parse a source's raw posted-date into a real datetime instead of
+    passing the raw value through to Postgres's implicit string cast.
+    RemoteOK's `date` field is missing on some records, falling back to
+    `epoch` (a Unix-timestamp string) -- without this, that fallback value
+    hits Postgres as a bare digit string, which a `timestamp` column
+    rejects outright. Returns None for anything unparseable so one bad
+    record doesn't fail the whole batch."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, (int, float)):
+        try:
+            return datetime.fromtimestamp(value, tz=timezone.utc)
+        except (ValueError, OSError):
+            return None
+    value = str(value)
+    if value.isdigit():
+        try:
+            return datetime.fromtimestamp(int(value), tz=timezone.utc)
+        except (ValueError, OSError):
+            return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
 def normalize_adzuna(raw):
     external_id = raw.get("id")
     title = raw.get("title")
@@ -172,7 +202,7 @@ def normalize_adzuna(raw):
         "salary_max": int(raw["salary_max"]) if raw.get("salary_max") else None,
         "description": raw.get("description"),
         "url": raw.get("redirect_url"),
-        "posted_at": raw.get("created"),
+        "posted_at": normalize_posted_at(raw.get("created")),
     }
 
 
@@ -200,7 +230,7 @@ def normalize_usajobs(raw):
         ),
         "description": user_area_details.get("JobSummary", ""),
         "url": d.get("PositionURI"),
-        "posted_at": d.get("PublicationStartDate"),
+        "posted_at": normalize_posted_at(d.get("PublicationStartDate")),
     }
 
 
@@ -220,7 +250,7 @@ def normalize_remoteok(raw):
         "salary_max": raw.get("salary_max"),
         "description": raw.get("description"),
         "url": raw.get("url"),
-        "posted_at": raw.get("date") or raw.get("epoch"),
+        "posted_at": normalize_posted_at(raw.get("date") or raw.get("epoch")),
     }
 
 
@@ -273,7 +303,7 @@ job_postings_schema = StructType(
         StructField("salary_max", IntegerType(), True),
         StructField("description", StringType(), True),
         StructField("url", StringType(), True),
-        StructField("posted_at", StringType(), True),
+        StructField("posted_at", TimestampType(), True),
     ]
 )
 
