@@ -398,3 +398,51 @@ Mirror the structure of `lakebase-support-app`:
   `https://bootcamp-job-search-agent-7474658268863295.aws.databricksapps.com`.
   Final `requirements.txt`/`agent.py` fixes committed and pushed to
   `origin/main` so the git-tracked source matches what's actually running.
+
+## Post-submission — grading feedback response
+
+First submission scored **90/100**. Score breakdown: full marks (15/15 or
+30/30) on all 5 rubric requirements from README.md/CLAUDE.md's "Required
+architecture" list; the only deduction was **0/10 on a 6th category, "Change
+Data Feed (CDF) → Delta Analytics Table"**, which was never part of this
+project's original 5-requirement scope — the grader applied an extended
+rubric item this repo was never designed against. **Decision: not pursued.**
+It would also cut against Phase 3's explicit design reasoning (this
+workspace has no project UC catalog, and pgvector-on-Lakebase was chosen
+specifically to avoid a Delta-mirror of `job_postings`) — revisiting that
+for a bonus category the original brief didn't include wasn't judged worth
+the scope creep for a project that already passed. If a future session
+picks this up: mirror `applications` and/or `job_postings` into a UC Delta
+table via a scheduled Spark job (JDBC read → Delta write), enable
+`delta.enableChangeDataFeed`, and build an analytics table off
+`table_changes(...)` — see the original grading feedback for the full
+suggestion.
+
+Two things *were* acted on from the feedback:
+
+- **The `posted_at` normalization nit turned out to be a real bug, not
+  style** — see the "Post-submission fix (grader feedback)" note under
+  Phase 2 above (`notebooks/ingest_job_postings.py`'s `normalize_posted_at`,
+  commit `584c498`).
+- **Evidence gaps** (repo tree/notebook-path confirmation, job-run counts,
+  app screenshots) were the grader's own admission that they couldn't
+  access this workspace's SSO-gated URLs (same limitation as the live App
+  link) — addressed by adding `evidence/EVIDENCE.md` +
+  `evidence/screenshots/` (postings, pipeline, chat, and the actual job-run
+  output panel showing `fetched=350 deduped=337 inserted=10 updated=327`,
+  cross-validated against a direct Lakebase query of the same run) —
+  committed in `316b8cf`, not left as an ungit-tracked one-off file, so the
+  zip/repo/what's-actually-verified all stay in sync per the note below.
+
+**Resubmission mechanics — the zip must be rebuilt after every change:**
+the submission zip is built via `git ls-files -z | xargs -0 zip <out>.zip`
+(tracked files only, so `.env`/secrets stay excluded automatically) — but
+that means the zip goes stale the moment anything is committed afterward.
+Rebuild it fresh from a clean `git status` right before every actual
+resubmission, don't reuse an earlier one. Also re-run the secrets grep
+(`ep-aged-river`/host, personal email, service-principal UUIDs — see
+CLAUDE.md's Secrets section) across any new files before zipping,
+including screenshots: a Databricks Jobs UI screenshot's "Parameters"
+panel visibly showed real `pg_host`/`pg_user`/`endpoint_name` and had to be
+cropped before being added to the repo — image evidence needs the same
+scrutiny as committed text.
